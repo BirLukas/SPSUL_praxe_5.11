@@ -1,0 +1,13 @@
+# API klíče nikdy do gitu
+.env
+.claude/settings.local.json
+
+# mezipaměť odpovědí modelů
+cache/
+
+# prostředí
+.venv/
+venv/
+__pycache__/
+node_modules/
+.DS_Store

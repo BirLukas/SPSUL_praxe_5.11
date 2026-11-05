@@ -1,0 +1,399 @@
+# Evals: změř, jestli AI dělá dobrou práci
+
+**Délka:** 6 hodin, samostatná práce
+**Odevzdání:** Pull Request do tohoto repozitáře, nejpozději do konce dnešní praxe (postup viz [Jak odevzdat](#jak-odevzdat))
+**Navazuje na:** RAG a embeddingy z minulé hodiny
+
+## Proč tohle děláme
+
+Když postavíš aplikaci s AI, nejčastější chyba je, že ji vyzkoušíš na třech příkladech, řekneš si „vypadá to dobře“ a jedeš dál. Pak změníš prompt nebo model a nevíš, jestli se to zlepšilo, nebo zhoršilo.
+
+Profesionálové to řeší **evaly**: sadou testovacích případů se známou správnou odpovědí, na které se každá změna změří čísly. Je to stejný princip jako unit testy, jen pro AI.
+
+Dnes si postavíš malý AI nástroj, testovací sadu k němu a skript, který změří tři různé modely. Na konci budeš umět s daty v ruce říct, který model a jaký prompt je nejlepší a kolik by to stálo. Přitom si rozjedeš AI asistenta pro programování, který poběží celý den zdarma. Výsledky celé třídy se průběžně sbírají na [společný dashboard](https://doudik.github.io/SPSUL_praxe_5.11/).
+
+**Co se naučíš:**
+
+- kde a jak získat tokeny zdarma a jak s nimi šetřit
+- jak připojit AI asistenta pro programování k libovolnému modelu a co zvládnou malé modely
+- strukturovaný výstup (LLM vrací JSON, ne volný text)
+- jak sestavit testovací sadu a proč ji dělit na vývojovou a testovací část
+- metriky: přesnost, validita výstupu, latence, spotřeba tokenů
+- porovnání modelů a odhad ceny
+- rozbor chyb: proč model selhal a co s tím
+
+## Pravidla
+
+- Jazyk si vyber sám (Python, JS, cokoli). Hodnotí se výsledek, ne jazyk.
+- Každý má **jinou úlohu** (viz Fáze 1). Kdo dřív otevře Pull Request s úlohou, ten ji má.
+- Pracuješ **jen ve své složce** `studenti/prijmeni-jmeno/`. Na nic jiného v repozitáři nesahej.
+- AI asistenta (OpenCode, ChatGPT, cokoli) používat smíš. V README ale napiš, k čemu jsi ho použil. **Správné odpovědi v testovací sadě kontroluješ ty**, ne AI.
+- Commituj a pushuj průběžně, aspoň po každé fázi. Jeden commit na konci dne je podezřelý.
+- **API klíč nikdy nesmí být v repozitáři.** Ani v historii commitů. Repozitář je veřejný.
+
+---
+
+## Fáze 0: Tokeny zdarma, AI asistent a první volání (45 min)
+
+**Úplně nejdřív** udělej kroky 1 až 3 z [Jak odevzdat](#jak-odevzdat): fork, naklonování a vlastní složka. Ve složce pak budeš celý den pracovat.
+
+### Kde vzít tokeny zdarma
+
+Všichni níže uvedení poskytovatelé mají **API kompatibilní s OpenAI**. Stejný kód tak funguje se všemi, mění se jen adresa (`base_url`), klíč a název modelu.
+
+| Poskytovatel | Registrace | Base URL | Limit zdarma (listopad 2026) | Na co ho dnes použiješ |
+|---|---|---|---|---|
+| **Mistral** | [console.mistral.ai](https://console.mistral.ai) → plán *Experiment* (zdarma, ověření telefonem) → API Keys | `https://api.mistral.ai/v1` | velkorysý: zhruba 1 požadavek/s a stovky milionů tokenů měsíčně. Přesné limity uvidíš v konzoli v sekci Limits | **hlavní model pro AI asistenta** (Devstral) |
+| **Groq** | [console.groq.com](https://console.groq.com) → API Keys | `https://api.groq.com/openai/v1` | okolo **1000 požadavků/den** na model, velmi rychlé, ale jen asi 8 000 tokenů/min | **hlavní práce na evalu** |
+| **Google AI Studio** (Gemini) | [aistudio.google.com](https://aistudio.google.com) → Get API key | `https://generativelanguage.googleapis.com/v1beta/openai/` | stovky požadavků/den na modely Flash, přesně na [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit) | záloha pro asistenta, třetí model do evalu |
+| **OpenRouter** | [openrouter.ai](https://openrouter.ai) → Keys | `https://openrouter.ai/api/v1` | modely s `:free` na konci: 20 požadavků/min, **jen 50 požadavků/den** na celý účet | druhá záloha, bonus s Claude Code |
+
+**Povinně si založ Groq a Mistral, pak Gemini. OpenRouter jen když zbude čas.** Každý má jiné limity a když jeden dojde, přepneš na další. Tohle je běžná praxe i ve firmách.
+
+**Bezplatné modely na OpenRouteru** najdeš na [openrouter.ai/models](https://openrouter.ai/models) po nastavení filtru ceny na Free. Mají v názvu `:free`, třeba `google/gemma-4-31b-it:free`. Nabídka se často mění. Existuje i `openrouter/free`, který sám vybere nějaký bezplatný model. **Do evalu ho nepoužívej**: pokaždé může odpovídat jiný model, takže výsledky nepůjdou porovnat.
+
+**Na Groqu a Mistralu** najdeš aktuální modely a své limity v konzoli v sekci Limits.
+
+> **Pozor na soukromí:** bezplatné verze mohou tvoje data použít k trénování modelů (u Mistralu s tím při registraci plánu Experiment přímo souhlasíš). Neposílej do nich osobní údaje, hesla ani nic, co nechceš zveřejnit. V testovací sadě používej vymyšlená data.
+
+### AI asistent: OpenCode
+
+[OpenCode](https://opencode.ai) je open-source AI asistent pro programování v terminálu, podobný Claude Code nebo Cursoru. Čte tvůj projekt, píše kód a spouští příkazy. Na rozdíl od nich se jednoduše připojí k **libovolnému poskytovateli**, takže ho rozjedeš zdarma a model přepneš jedním příkazem.
+
+**1. Instalace**
+
+- Windows: `npm install -g opencode-ai` (potřebuješ Node.js), případně `scoop install opencode`
+- macOS a Linux: `curl -fsSL https://opencode.ai/install | bash`
+
+**2. Připoj poskytovatele.** Ve své složce spusť `opencode`, napiš `/connect`, vyhledej **Mistral** a vlož klíč. Totéž zopakuj pro **Google** (klíč z AI Studia) a **OpenRouter**. Klíče se uloží do tvé domovské složky, **mimo repozitář**.
+
+**3. Vyber model.** Napiš `/models` a zvol `devstral-latest` od Mistralu. Devstral je model trénovaný přímo na programování a na bezplatném plánu má nejvíc prostoru. Aby se vybral sám při každém spuštění, dej do své složky soubor `opencode.json` (klíč v něm není, commitnout ho můžeš):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "mistral/devstral-latest"
+}
+```
+
+**4. Ověření.** Zeptej se „Popiš mi, co je v téhle složce.“ Když odpoví, funguje to.
+
+**Když dojde limit nebo to nejde:**
+
+- Chyba 429 (*rate limit*): přepni přes `/models` na jiného poskytovatele. Pořadí: Mistral Devstral → Gemini Flash → bezplatný model na OpenRouteru (s filtrem **Tools**, asistent bez volání nástrojů neumí číst soubory).
+- OpenRouter hlásí `No endpoints found matching your data policy`: v [nastavení soukromí na OpenRouteru](https://openrouter.ai/settings/privacy) povol bezplatné modely.
+- Na Groqu asistenta nepouštěj. Limit 8 000 tokenů za minutu se vyčerpá jedním dotazem, protože asistent posílá s každým požadavkem velké množství kontextu. Groq si nech na eval.
+- Model se zacyklí, nečte soubory nebo píše nesmysly: menší modely to dělají. Zkus jiný. **Zapiš si, co se stalo**, do reflexe se to hodí.
+
+**Jak s asistentem pracovat chytře:**
+
+- Zadávej konkrétní, malé úkoly („napiš funkci, která načte JSONL soubor a vrátí seznam slovníků“), ne „udělej mi celé zadání“. Malé modely na velkých úkolech selhávají.
+- Ve své složce si založ krátký `AGENTS.md`: co projekt dělá, v jakém je jazyce, jak se spouští. OpenCode ho čte automaticky a nemusí pokaždé procházet všechny soubory. (Příkaz `/init` ho vygeneruje sám.)
+- Kód, který asistent napíše, si přečti. Za odevzdaný kód ručíš ty.
+
+### Klíče do vlastního kódu
+
+1. Klíče pro eval dej do souboru `.env` ve své složce (`GROQ_API_KEY=...`, `GEMINI_API_KEY=...`, `MISTRAL_API_KEY=...`, `OPENROUTER_API_KEY=...`).
+2. Přidej `.env.example` se stejnými názvy proměnných, ale bez hodnot.
+3. `.env` je v kořenovém `.gitignore`, takže ho git nepřidá. **Než poprvé commitneš**, stejně spusť `git status` a zkontroluj, že tam `.env` není.
+
+Když klíč omylem commitneš a pushneš, nestačí ho smazat dalším commitem, protože v historii zůstane. Musíš ho **u poskytovatele zneplatnit a vygenerovat nový**. Roboti procházejí GitHub a uniklé klíče najdou během minut.
+
+### První volání
+
+Ověř, že ti klíč na Groqu funguje:
+
+```bash
+curl https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-oss-20b", "messages": [{"role": "user", "content": "Ahoj, odpověz jedním slovem."}]}'
+```
+
+V odpovědi najdi pole `usage`. Uvidíš v něm `prompt_tokens` a `completion_tokens`, tedy kolik tokenů šlo do modelu a kolik z něj přišlo. Tahle čísla budeš sbírat.
+
+Na Windows spouštěj `curl` v Git Bash (v PowerShellu má jinou syntaxi), nebo rovnou napiš krátký skript.
+
+V Pythonu i JS můžeš použít oficiální knihovnu `openai`. Stačí jí nastavit `base_url` a `api_key` podle tabulky výše.
+
+### Kolik toho dnes spotřebuješ
+
+| Co | Kde | Zhruba požadavků |
+|---|---|---|
+| AI asistent během dne | Mistral, záloha Gemini a OpenRouter | desítky až stovky |
+| ladění evalu na 2 až 3 případech | Groq | 20 |
+| celý eval (Fáze 4) | Groq, Gemini nebo Mistral | 80 |
+
+Eval ukládá odpovědi do mezipaměti (Fáze 3), takže opakované spuštění nic nestojí.
+
+✅ **Kontrolní bod:** OpenCode odpovídá přes Mistral, máš funkční volání aspoň u dvou poskytovatelů a `.env` není v gitu.
+
+---
+
+## Fáze 1: Vyber úlohu a otevři Pull Request (30 min)
+
+Postavíš nástroj, který z krátkého českého textu **vytáhne strukturované údaje do JSONu**. Úloha musí mít jednoznačně správnou odpověď, kterou dokážeš sám ověřit, jinak ji nepůjde měřit.
+
+**Náměty** (můžeš mít i vlastní, ale každý jiný):
+
+1. E-maily na školní helpdesk: kategorie, priorita, oddělení
+2. Recenze z e-shopu: sentiment, hodnocený aspekt (cena, doprava, kvalita)
+3. Inzeráty bytů: cena, dispozice, plocha v m², město
+4. Inzeráty aut: značka, model, rok, nájezd v km, cena
+5. Pracovní nabídky: pozice, mzda od a do, home office ano/ne, technologie
+6. Hlášení závad v učebně: zařízení, učebna, závažnost
+7. Účtenky přepsané do textu: obchod, datum, celková částka
+8. Bug reporty: komponenta, závažnost, je reprodukovatelný ano/ne
+9. Sportovní zprávy: týmy, skóre, vítěz
+10. SMS zprávy: phishing ano/ne, typ podvodu
+11. Komentáře na fóru: toxický ano/ne, typ (urážka, spam, v pořádku)
+12. Pozvánky na akce: název, datum, čas, místo
+13. Dotazy z IT fóra: komponenta, problém, operační systém
+14. Jídelníček: název jídla, alergeny (čísla)
+15. Dopravní hlášení: linka, zpoždění v minutách, příčina
+16. Objednávky v pizzerii: položky, počet kusů, adresa, platba
+17. Zprávy o počasí: město, teplota, srážky ano/ne
+18. Studijní dotazy: předmět, typ dotazu (termín, známka, omluvenka)
+
+**Než si úlohu vybereš**, projdi [otevřené Pull Requesty](https://github.com/doudik/SPSUL_praxe_5.11/pulls). Úloha, která už v názvu nějakého PR je, je zabraná.
+
+**Hned jak si úlohu vybereš**, otevři Pull Request jako *Draft* (postup viz [Jak odevzdat](#jak-odevzdat)). Název PR: `Příjmení Jméno: úloha`, například `Novák Jan: inzeráty aut`. Tím si úlohu zamluvíš.
+
+Do `README.md` ve své složce pak popiš:
+
+- **co nástroj dělá** (2 až 3 věty),
+- **přesné schéma výstupu**: názvy polí, jejich typ a u kategorií povolené hodnoty. Například:
+
+```json
+{
+  "kategorie": "hardware | software | sit | ucet | jine",
+  "priorita": "nizka | stredni | vysoka",
+  "ucebna": "string nebo null"
+}
+```
+
+- **pravidla porovnávání**: kdy považuješ odpověď za správnou (malá a velká písmena, mezery, „1 500 Kč“ proti 1500 a podobně).
+
+Doporučuji 3 až 5 polí. Kombinace kategorie a extrahovaného údaje dává nejzajímavější výsledky.
+
+✅ **Kontrolní bod:** Draft PR je otevřený, README ve tvé složce obsahuje popis úlohy, schéma a pravidla porovnávání. Commitni a pushni.
+
+---
+
+## Fáze 2: Testovací sada (60 min)
+
+Tohle je nejdůležitější část celé práce. Špatná testovací sada znamená bezcenná čísla.
+
+Vytvoř **25 testovacích případů**. Každý obsahuje vstupní text a správnou odpověď (tzv. *gold*):
+
+```json
+{"id": 1, "input": "Dobrý den, v učebně 204 nejde zapnout projektor, za hodinu tam máme maturitní prezentace.", "expected": {"kategorie": "hardware", "priorita": "vysoka", "ucebna": "204"}}
+```
+
+Formát: JSONL (jeden JSON objekt na řádek) nebo CSV.
+
+**Požadavky:**
+
+- Aspoň **5 záludných případů**: chybějící údaj (správně je `null`), dva údaje v jednom textu, překlep, ironie, údaj v jiném formátu („patnáct set“), text, který do žádné kategorie nepatří.
+- Záludné případy označ (`"tezky": true`).
+- Případy se mezi sebou mají lišit délkou, stylem i tématem. 25 skoro stejných vět nic nezměří.
+
+**Rozděl sadu na dvě části:**
+
+- `data/dev.jsonl`: 15 případů. Na nich ladíš prompt.
+- `data/test.jsonl`: 10 případů. Ty **nikdy nepoužiješ k ladění**. Spustíš je až na konci a výsledek reportuješ.
+
+> **Proč dělit?** Když ladíš prompt na stejných datech, na kterých pak měříš, prompt se „naučí“ přesně tyhle případy a čísla vyjdou lepší, než jaká budou ve skutečnosti. Říká se tomu přeučení (*overfitting*) a v AI je to jedna z nejčastějších chyb. Je to stejné, jako kdybys znal otázky z písemky předem.
+
+Vstupní texty ti může pomoct vymyslet AI. **Správné odpovědi ale vyplň a zkontroluj sám.** Každý případ si přečti a rozhodni, co je správně.
+
+✅ **Kontrolní bod:** 15 + 10 případů, aspoň 5 záludných, správné odpovědi zkontrolované. Commitni a pushni.
+
+---
+
+## Fáze 3: Evaluační skript (75 min)
+
+Napiš program, který:
+
+1. Načte sadu (`dev` nebo `test`) a prompt ze souboru (`prompts/v1.txt`).
+2. Každý případ pošle modelu. Nastav **`temperature: 0`**, aby výsledky šly opakovat.
+3. Odpověď zkusí rozparsovat jako JSON. Když to nejde, započítá případ jako **nevalidní výstup**. Nepadá na tom celý program.
+4. Porovná výstup se správnou odpovědí podle tvých pravidel z Fáze 1.
+5. U každého volání si uloží `prompt_tokens`, `completion_tokens` a dobu odpovědi.
+6. Vypíše a uloží do `results/` souhrn:
+   - **validní JSON** v % případů
+   - **přesnost po polích** (u kolika % případů sedí `kategorie`, `priorita`...)
+   - **úplná shoda** (% případů, kde sedí všechna pole)
+   - **průměrná latence** v sekundách
+   - **tokeny celkem** (vstup a výstup zvlášť)
+7. Uloží i surové odpovědi modelu, aby šly zpětně zkontrolovat.
+8. Každý běh přidá do souboru **`results/summary.json`** ve **přesně tomhle formátu**. Z něj se plní [společný dashboard třídy](https://doudik.github.io/SPSUL_praxe_5.11/), takže názvy klíčů neměň:
+
+```json
+{
+  "student": "Jan Novák",
+  "uloha": "Inzeráty aut",
+  "behy": [
+    {
+      "model": "openai/gpt-oss-20b",
+      "poskytovatel": "groq",
+      "prompt": "v1",
+      "sada": "dev",
+      "pripadu": 15,
+      "validni_json": 1.0,
+      "uplna_shoda": 0.6,
+      "pole": {"znacka": 0.93, "rok": 0.87, "cena": 0.8},
+      "latence_s": 0.42,
+      "tokeny_vstup": 3100,
+      "tokeny_vystup": 900
+    }
+  ]
+}
+```
+
+- `sada` je `"dev"` nebo `"test"`, `prompt` je `"v1"` nebo `"v2"`.
+- Podíly (`validni_json`, `uplna_shoda`, hodnoty v `pole`) jsou **čísla od 0 do 1**, ne procenta. 60 % je `0.6`.
+- `latence_s` je průměr v sekundách, `tokeny_vstup` a `tokeny_vystup` jsou součty za celý běh.
+- Stejný běh spuštěný znovu ať záznam přepíše, ne přidá další.
+
+**Mezipaměť (povinné):** než pošleš požadavek, spočítej klíč z kombinace model + prompt + vstup (třeba jejich hash) a podívej se do složky `cache/`. Když tam odpověď je, použij ji a API nevolej. Ušetříš limity a skript pak můžeš spouštět kolikrát chceš. Složka `cache/` je v `.gitignore`.
+
+Model a poskytovatel ať se nastavují parametrem nebo konfigurací, ne přepisováním kódu.
+
+**Chyba 429 je normální.** Bezplatné úrovně mají limit požadavků i tokenů za minutu (Groq asi 8 000 tokenů/min, takže ho celá sada rychle vyčerpá). Skript proto musí při chybě 429 počkat (třeba 10 až 20 sekund) a zkusit to znovu, ne spadnout. Případně mezi požadavky dej krátkou pauzu.
+
+**Tip pro JSON výstup:** někteří poskytovatelé podporují `"response_format": {"type": "json_object"}`. Ne každý free model ho ale zvládá. V promptu proto vždy výslovně napiš, ať model vrátí jen JSON. Validita výstupu je jedna z věcí, které měříš.
+
+✅ **Kontrolní bod:** skript proběhne na `dev` sadě s jedním modelem a vypíše metriky. Druhé spuštění nespotřebuje žádné požadavky. Commitni a pushni. Obvykle do 15 minut se tvůj výsledek objeví na [dashboardu třídy](https://doudik.github.io/SPSUL_praxe_5.11/). Když u tebe svítí červená chyba, oprav formát `summary.json`.
+
+---
+
+## Fáze 4: Experimenty (60 min)
+
+### 4a: Porovnání modelů
+
+S promptem `v1` pusť `dev` sadu na **3 různých modelech**, ideálně od aspoň 2 poskytovatelů (například 2 modely na Groqu a 1 na Gemini). Vyber modely různé velikosti, ať je co porovnávat: třeba jeden malý kolem 8 až 20 miliard parametrů a jeden velký nad 70 miliard.
+
+> Když ti nějaká registrace nepůjde, stačí 3 modely od jednoho poskytovatele. Napiš to do README.
+
+### 4b: Lepší prompt
+
+Projdi chyby z 4a a napiš `prompts/v2.txt`. Vyzkoušej aspoň jednu z technik:
+
+- **few-shot**: dej do promptu 2 až 3 vyřešené příklady (**ne** z testovací sady!)
+- přesnější popis kategorií, včetně toho, kdy kterou nepoužít
+- výslovná instrukce pro chybějící údaje (`null`)
+- schéma JSONu přímo v promptu
+
+Pusť `v2` na `dev` sadě aspoň na jednom modelu a porovnej s `v1`.
+
+### 4c: Finální měření
+
+Vyber nejlepší kombinaci model + prompt a **teprve teď** ji pusť na `test` sadě. Pusť tam pro srovnání i druhou nejlepší kombinaci.
+
+**Výsledky dej do tabulky v README**, například:
+
+| Model | Poskytovatel | Prompt | Sada | Validní JSON | Úplná shoda | Pole „kategorie“ | Latence | Tokeny (vstup/výstup) |
+|---|---|---|---|---|---|---|---|---|
+| ... | Groq | v1 | dev | 100 % | 60 % | 87 % | 0,4 s | 3 100 / 900 |
+
+✅ **Kontrolní bod:** tabulka v README, soubory s výsledky v `results/`, všechny běhy v `summary.json`. Commitni a pushni a na [dashboardu třídy](https://doudik.github.io/SPSUL_praxe_5.11/) porovnej své výsledky s ostatními. Vyhrává u všech stejný model?
+
+---
+
+## Fáze 5: Rozbor a závěr (45 min)
+
+Do README ve své složce dopiš:
+
+1. **Rozbor 3 chyb.** U každé: vstup, co model vrátil, co je správně a **proč si myslíš, že se spletl**. Šlo o nejasné zadání, chybu modelu, nebo chybu v tvé správné odpovědi? I to se stává a přiznat to je v pořádku.
+2. **Doporučení.** Kdybys tenhle nástroj nasazoval na 10 000 dotazů denně, jaký model a prompt bys vybral a proč? Zohledni přesnost, rychlost i cenu. U zvoleného modelu najdi na OpenRouteru cenu placené (ne `:free`) varianty a z naměřených tokenů spočítej, **kolik by stálo 10 000 dotazů**.
+3. **Rozdíl dev a test.** Liší se výsledky? Proč?
+4. **AI asistent.** Jaké modely jsi v OpenCode použil, kdy a proč jsi přepínal, s čím ti pomohl a kde selhal. Poznal jsi rozdíl mezi menším a větším modelem?
+5. **Reflexe (5 až 10 vět).** Co tě překvapilo? Co bys udělal jinak?
+
+---
+
+## Bonusy (max. +10 bodů, až máš hotové všechno ostatní)
+
+- **Konzistence (+3):** pusť 5 případů 5krát s `temperature: 1`. Jak moc se odpovědi liší?
+- **LLM jako hodnotitel (+4):** přidej do schématu pole s volným textem (třeba `shrnuti`). Nech jiný model ohodnotit shrnutí na škále 1 až 5 a na 10 případech porovnej jeho hodnocení se svým. Shodnete se?
+- **Embeddingy (+3):** volný text porovnej se správnou odpovědí přes kosinovou podobnost embeddingů z minulé hodiny místo přesné shody. Kdy to dává lepší výsledky?
+- **Vlastní dashboard (+3):** skript vyrobí z `results/summary.json` HTML stránku `results/dashboard.html` s grafy: porovnání modelů, v1 proti v2, dev proti test a přesnost po jednotlivých polích. Stačí čisté HTML a JS bez frameworku. Dashboard třídy ti může posloužit jako inspirace.
+- **Claude Code přes OpenRouter (+3):** rozjeď [Claude Code](https://claude.com/claude-code) s bezplatným modelem a zadej mu stejný malý úkol jako OpenCode. V README porovnej výsledek a spotřebu požadavků. Postup:
+  1. Instalace: Windows `irm https://claude.ai/install.ps1 | iex`, macOS a Linux `curl -fsSL https://claude.ai/install.sh | bash`.
+  2. Do `~/.claude/settings.json` (na Windows `C:\Users\<tvoje jméno>\.claude\settings.json`, mimo repozitář) vlož níže uvedený blok. Model vyber na OpenRouteru s filtry **Free** a **Tools** a nastav ho do všech čtyř řádků, jinak Claude Code na pozadí volá placený model. `ANTHROPIC_API_KEY` musí zůstat prázdný řetězec.
+  3. Spusť `claude`, napiš `/status` a zkontroluj, že je tam `https://openrouter.ai/api`. Spotřebu sleduj na [openrouter.ai/activity](https://openrouter.ai/activity).
+
+  ```json
+  {
+    "env": {
+      "ANTHROPIC_BASE_URL": "https://openrouter.ai/api",
+      "ANTHROPIC_AUTH_TOKEN": "sk-or-v1-TVUJ-KLIC",
+      "ANTHROPIC_API_KEY": "",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL": "cohere/north-mini-code:free",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL": "cohere/north-mini-code:free",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "cohere/north-mini-code:free",
+      "CLAUDE_CODE_SUBAGENT_MODEL": "cohere/north-mini-code:free"
+    }
+  }
+  ```
+
+  Pozor: OpenRouter dává zdarma jen 50 požadavků denně a jeden větší úkol v Claude Code jich spotřebuje 10 až 30.
+
+---
+
+## Když nestíháš
+
+- **Fáze 0 ti trvá přes hodinu** (registrace nejde, instalace neprojde): nech asistenta být, pokračuj Fází 1 a v README napiš, co nefungovalo. Bez asistenta přijdeš nejvýš o 5 bodů.
+- **Hodinu před koncem nemáš Fázi 4:** změř, co máš (i jen jeden model), a napiš Fázi 5. Rozbor chyb a reflexe dávají víc bodů než třetí model.
+- Odevzdej vždycky. Rozpracovaný Pull Request se hodnotí, chybějící ne.
+
+## Jak odevzdat
+
+1. Vpravo nahoře na této stránce klikni na **Fork** a vytvoř si vlastní kopii repozitáře.
+2. Svůj fork si naklonuj (`git clone https://github.com/<tvuj-ucet>/SPSUL_praxe_5.11.git`).
+3. Vytvoř složku `studenti/prijmeni-jmeno/` (jen malá písmena bez diakritiky, číslice a pomlčky, například `studenti/novak-jan/`, jinak tě dashboard nenajde) a v ní soubor `README.md` s názvem úlohy. Commitni a pushni do svého forku.
+4. Na GitHubu ve svém forku klikni na **Contribute → Open pull request**. Rozbal šipku u tlačítka **Create pull request** a zvol **Create draft pull request**. Název: `Příjmení Jméno: úloha`.
+5. Pracuj a pushuj průběžně do svého forku. Pull Request se aktualizuje sám.
+6. Až budeš hotový, klikni v Pull Requestu na **Ready for review**. Tím odevzdáváš. Udělej to nejpozději do konce dnešní praxe.
+
+**Struktura tvé složky** (názvy souborů v `src/` jsou na tobě):
+
+```
+studenti/prijmeni-jmeno/
+  README.md          popis úlohy, schéma, jak spustit, tabulka výsledků, rozbor, reflexe
+  AGENTS.md          krátký kontext pro AI asistenta
+  opencode.json      výchozí model pro OpenCode
+  .env.example       názvy proměnných bez hodnot
+  data/dev.jsonl
+  data/test.jsonl
+  prompts/v1.txt
+  prompts/v2.txt
+  src/...            tvůj kód
+  results/summary.json  souhrn všech běhů pro dashboard (přesný formát viz Fáze 3)
+  results/...        surové odpovědi
+```
+
+Do README napiš i **jak projekt spustit** (instalace, příkaz).
+
+## Hodnocení
+
+| Část | Body |
+|---|---|
+| Fáze 0: OpenCode s bezplatným modelem, `AGENTS.md`, klíče mimo git, `.env.example`, návod ke spuštění | 15 |
+| Fáze 1: včas otevřený Draft PR, popis úlohy, schéma, pravidla porovnávání | 10 |
+| Fáze 2: 25 případů, 5 záludných, rozdělení dev/test, správné odpovědi sedí | 20 |
+| Fáze 3: skript funguje, všechny metriky, mezipaměť, odolnost vůči nevalidnímu JSONu, `summary.json` ve správném formátu | 25 |
+| Fáze 4: 3 modely, prompt v2, finální měření na test sadě, tabulka | 15 |
+| Fáze 5: rozbor chyb, doporučení s výpočtem ceny, zkušenost s AI asistentem, reflexe | 15 |
+| **Celkem** | **100** |
+| Bonusy | +10 |
+
+**Srážky:**
+
+- API klíč v repozitáři nebo v historii commitů: **−20 bodů**
+- ladění promptu na test sadě (příklady z test sady ve few-shot): **−10 bodů**
+- čísla v README neodpovídají souborům v `results/`: **−10 bodů**
+- změny mimo vlastní složku: **−5 bodů**
+
+**Převod na známku:** 90+ bodů = 1, 75+ = 2, 60+ = 3, 45+ = 4, méně = 5.

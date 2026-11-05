@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evals: výsledky třídy</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-0: #f3f2ef;
+    --surface-1: #fcfcfb;
+    --border: #e2e1dc;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #77756f;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --track: #ebeae6;
+    --critical: #c62f2f;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --surface-0: #111110;
+      --surface-1: #1a1a19;
+      --border: #33332f;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #9a998f;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --track: #2a2a27;
+      --critical: #f07a7a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .viz-root {
+    min-height: 100vh; background: var(--surface-0); color: var(--text-primary);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 32px 20px 64px;
+  }
+  main { max-width: 1100px; margin: 0 auto; display: grid; gap: 24px; }
+  h1 { font-size: 26px; margin: 0; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); margin: 0 0 16px; }
+  .meta { color: var(--text-muted); font-size: 13px; }
+  section { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .tile b { display: block; font-size: 30px; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--text-secondary); font-size: 13px; }
+  .bars { display: grid; gap: 10px; }
+  .bar-row { display: grid; grid-template-columns: minmax(140px, 260px) 1fr 104px; gap: 12px; align-items: center; }
+  .bar-label { font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .track { position: relative; height: 18px; background: var(--track); border-radius: 4px; }
+  .bar { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 0 4px 4px 0; }
+  .bar.s1 { background: var(--series-1); }
+  .bar.s2 { background: var(--series-2); }
+  .pair .track { height: 10px; }
+  .pair .stack { display: grid; gap: 2px; }
+  .zero { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--text-muted); }
+  .bar.neg { left: auto; border-radius: 4px 0 0 4px; }
+  .val { font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+  a { color: var(--series-1); }
+  .err { color: var(--critical); font-size: 13px; margin: 0; padding-left: 18px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+  .empty { color: var(--text-muted); }
+  details summary { cursor: pointer; color: var(--text-secondary); font-size: 14px; margin-top: 12px; }
+  #tip { position: fixed; pointer-events: none; background: var(--text-primary); color: var(--surface-1); font-size: 13px;
+         padding: 6px 10px; border-radius: 6px; max-width: 280px; display: none; z-index: 10; }
+  [data-tip] { cursor: default; }
+  .bar-row[data-tip] .track { outline-offset: 2px; }
+  @media (max-width: 640px) { .bar-row { grid-template-columns: 1fr 104px; } .bar-label { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<main id="app">
+  <header>
+    <h1>Evals: výsledky třídy</h1>
+    <p class="meta" id="meta">Načítám…</p>
+  </header>
+</main>
+<div id="tip" role="tooltip"></div>
+</div>
+<script>
+"use strict";
+const app = document.getElementById("app");
+const meta = document.getElementById("meta");
+
+// Všechna data pocházejí od studentů: vkládat jen jako text, nikdy jako HTML.
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k === "style") el.style.cssText = v;
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+const pct = v => v == null ? "-" : Math.round(v * 100) + " %";
+const num = v => v == null ? "-" : Number(v).toLocaleString("cs-CZ", { maximumFractionDigits: 2 });
+const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+const safeUrl = u => typeof u === "string" && u.startsWith("https://github.com/") ? u : null;
+const modelKey = r => (r.poskytovatel + "/" + r.model).trim().toLowerCase();
+
+function section(title, sub, ...body) {
+  return h("section", {}, h("h2", {}, title), sub ? h("p", { class: "sub" }, sub) : null, ...body);
+}
+function empty(text) { return h("p", { class: "empty" }, text); }
+
+function barRow(label, value, tip, cls = "s1") {
+  return h("div", { class: "bar-row", "data-tip": tip, "aria-label": tip },
+    h("div", { class: "bar-label" }, label),
+    h("div", { class: "track" }, h("div", { class: "bar " + cls, style: `width:${Math.max(0, Math.min(1, value)) * 100}%` })),
+    h("div", { class: "val" }, pct(value)));
+}
+
+function render(data) {
+  for (const el of [...app.children].slice(1)) el.remove();
+  const when = new Date(data.vygenerovano).toLocaleString("cs-CZ");
+  meta.textContent = `Data z Pull Requestů v ${data.repo}, aktualizováno ${when}. Stránka se sama obnovuje každé 2 minuty.`;
+
+  const studenti = data.studenti || [];
+  const ok = studenti.filter(s => s.summary);
+  const runs = ok.flatMap(s => s.summary.behy.map(b => ({ ...b, student: s.summary.student })));
+
+  // Dlaždice
+  app.append(h("div", { class: "tiles" },
+    [["Pull Requestů", studenti.length],
+     ["odevzdáno", studenti.filter(s => s.stav === "odevzdaný" || s.stav === "sloučený").length],
+     ["s platnými výsledky", ok.length],
+     ["s chybou ve výsledcích", studenti.filter(s => s.slozka && !s.summary).length]]
+      .map(([t, v]) => h("div", { class: "tile" }, h("b", {}, v), h("span", {}, t)))));
+
+  // Studenti
+  const rows = studenti.map(s => {
+    const name = s.summary ? s.summary.student : s.titulek;
+    const tests = s.summary ? s.summary.behy.filter(b => b.sada === "test") : [];
+    const best = tests.sort((a, b) => b.uplna_shoda - a.uplna_shoda)[0];
+    return h("tr", {},
+      h("td", {}, safeUrl(s.url) ? h("a", { href: safeUrl(s.url), target: "_blank", rel: "noopener" }, name) : name),
+      h("td", {}, s.summary ? s.summary.uloha : "-"),
+      h("td", {}, h("span", { class: "badge" }, s.stav)),
+      h("td", { class: "num" }, best ? pct(best.uplna_shoda) : "-"),
+      h("td", {}, best ? `${best.model} (${best.prompt})` : "-"),
+      h("td", {}, s.chyby.length ? h("ul", { class: "err" }, s.chyby.map(e => h("li", {}, e))) : "v pořádku"));
+  });
+  app.append(section("Studenti", "Nejlepší úplná shoda na test sadě. Chyby ve formátu summary.json se ukazují tady, ať je student může opravit.",
+    rows.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Student", "Úloha", "Stav PR", "Test: úplná shoda", "Model (prompt)", "summary.json"]
+        .map((t, i) => h("th", { class: i === 3 ? "num" : null }, t)))),
+      h("tbody", {}, rows))) : empty("Zatím žádný Pull Request.")));
+
+  // Modely napříč třídou (prompt v1, dev sada, aby šly porovnat)
+  const groups = new Map();
+  for (const r of runs.filter(r => r.prompt === "v1" && r.sada === "dev")) {
+    const k = modelKey(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const models = [...groups].map(([k, rs]) => ({
+    k, n: new Set(rs.map(r => r.student)).size,
+    shoda: avg(rs.map(r => r.uplna_shoda)), json: avg(rs.map(r => r.validni_json)),
+    lat: avg(rs.map(r => r.latence_s)),
+    tok: avg(rs.map(r => (r.tokeny_vstup + r.tokeny_vystup) / Math.max(1, r.pripadu))),
+  })).sort((a, b) => b.shoda - a.shoda);
+  app.append(section("Modely napříč třídou",
+    "Průměrná úplná shoda na dev sadě s promptem v1. Každý student měl jinou úlohu, takže model, který vyhrává u víc lidí, je obecně spolehlivější.",
+    models.length ? h("div", { class: "bars" }, models.map(m =>
+      barRow(`${m.k} (${m.n} ${m.n === 1 ? "student" : m.n < 5 ? "studenti" : "studentů"})`, m.shoda,
+        `${m.k}: úplná shoda ${pct(m.shoda)}, validní JSON ${pct(m.json)}, latence ${num(m.lat)} s, ${num(m.tok)} tokenů na případ`))) : empty("Zatím žádné běhy v1 na dev sadě."),
+    models.length ? h("details", {}, h("summary", {}, "Tabulka"), h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Model", "Studentů", "Úplná shoda", "Validní JSON", "Latence (s)", "Tokenů na případ"]
+        .map((t, i) => h("th", { class: i ? "num" : null }, t)))),
+      h("tbody", {}, models.map(m => h("tr", {}, h("td", {}, m.k), h("td", { class: "num" }, m.n), h("td", { class: "num" }, pct(m.shoda)),
+        h("td", { class: "num" }, pct(m.json)), h("td", { class: "num" }, num(m.lat)), h("td", { class: "num" }, num(m.tok))))))))
+      : null));
+
+  // Pomohl prompt v2?
+  const deltas = [];
+  for (const s of ok) {
+    const dev = s.summary.behy.filter(b => b.sada === "dev");
+    for (const v2 of dev.filter(b => b.prompt === "v2")) {
+      const v1 = dev.find(b => b.prompt === "v1" && modelKey(b) === modelKey(v2));
+      if (v1) deltas.push({ student: s.summary.student, model: v2.model, v1: v1.uplna_shoda, v2: v2.uplna_shoda, d: v2.uplna_shoda - v1.uplna_shoda });
+    }
+  }
+  deltas.sort((a, b) => b.d - a.d);
+  app.append(section("Pomohl lepší prompt?", "Změna úplné shody na dev sadě mezi promptem v1 a v2 u stejného modelu. Doprava = zlepšení, doleva = zhoršení, okraj = 50 procentních bodů.",
+    deltas.length ? h("div", { class: "bars" }, deltas.map(x => {
+      const w = Math.min(1, Math.abs(x.d) / 0.5) * 50; // půlka stopy = 50 procentních bodů
+      const tip = `${x.student}, ${x.model}: v1 ${pct(x.v1)} → v2 ${pct(x.v2)}`;
+      return h("div", { class: "bar-row", "data-tip": tip, "aria-label": tip },
+        h("div", { class: "bar-label" }, `${x.student} (${x.model})`),
+        h("div", { class: "track" }, h("div", { class: "zero" }),
+          h("div", { class: "bar " + (x.d >= 0 ? "s1" : "s2 neg"), style: x.d >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` })),
+        h("div", { class: "val" }, (x.d > 0 ? "+" : x.d < 0 ? "−" : "") + Math.round(Math.abs(x.d) * 100) + " p. b."));
+    })) : empty("Zatím nikdo nemá v1 i v2 na stejném modelu.")));
+
+  // Dev vs test
+  const pairs = [];
+  for (const s of ok) {
+    const b = s.summary.behy;
+    const matched = b.filter(t => t.sada === "test").map(t => ({ t,
+      d: b.find(d => d.sada === "dev" && d.prompt === t.prompt && modelKey(d) === modelKey(t)) })).filter(p => p.d);
+    matched.sort((a, c) => c.t.uplna_shoda - a.t.uplna_shoda);
+    if (matched[0]) pairs.push({ student: s.summary.student, model: matched[0].t.model, prompt: matched[0].t.prompt, dev: matched[0].d.uplna_shoda, test: matched[0].t.uplna_shoda });
+  }
+  pairs.sort((a, b) => (b.dev - b.test) - (a.dev - a.test));
+  app.append(section("Dev proti test", "Velký rozdíl znamená, že se prompt naučil dev sadu nazpaměť (přeučení). Nahoře je největší propad.",
+    pairs.length ? [h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--series-1)" }), "dev sada"),
+      h("span", {}, h("i", { style: "background:var(--series-2)" }), "test sada")),
+      h("div", { class: "bars" }, pairs.map(p => {
+        const tip = `${p.student}, ${p.model} (${p.prompt}): dev ${pct(p.dev)}, test ${pct(p.test)}`;
+        return h("div", { class: "bar-row pair", "data-tip": tip, "aria-label": tip },
+          h("div", { class: "bar-label" }, `${p.student} (${p.model}, ${p.prompt})`),
+          h("div", { class: "stack" },
+            h("div", { class: "track" }, h("div", { class: "bar s1", style: `width:${p.dev * 100}%` })),
+            h("div", { class: "track" }, h("div", { class: "bar s2", style: `width:${p.test * 100}%` }))),
+          h("div", { class: "val" }, `${pct(p.dev)} / ${pct(p.test)}`));
+      }))] : empty("Zatím nikdo nemá stejnou kombinaci na dev i test sadě.")));
+}
+
+// Tooltip
+const tip = document.getElementById("tip");
+document.addEventListener("mousemove", e => {
+  const t = e.target.closest("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.textContent = t.getAttribute("data-tip");
+  tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px";
+  tip.style.top = (e.clientY + 14) + "px";
+});
+
+async function load() {
+  try {
+    const r = await fetch("data.json?t=" + Date.now());
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+  } catch (e) {
+    meta.textContent = "Data se nepodařilo načíst (" + e.message + "). Zkus to za chvíli.";
+  }
+}
+load();
+setInterval(load, 120000);
+</script>
+</body>
+</html>
