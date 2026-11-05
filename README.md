@@ -50,6 +50,20 @@ Všichni níže uvedení poskytovatelé mají **API kompatibilní s OpenAI**. St
 
 **Povinně si založ Groq a Mistral, pak Gemini. OpenRouter jen když zbude čas.** Každý má jiné limity a když jeden dojde, přepneš na další. Tohle je běžná praxe i ve firmách.
 
+#### Další bezplatní poskytovatelé (volitelně)
+
+Chceš do evalu pestřejší modely? Tihle dávají API zdarma taky a fungují ve stejném formátu jako OpenAI. Ověřeno 5. 11. 2026:
+
+| Poskytovatel | Registrace | Base URL | Limit zdarma | Zajímavé modely |
+|---|---|---|---|---|
+| **NVIDIA NIM** | [build.nvidia.com](https://build.nvidia.com) (NVIDIA Developer, ověření telefonem) | `https://integrate.api.nvidia.com/v1` | 40 požadavků/min, 10 000/den | desítky modelů s označením *Free Endpoint*: `z-ai/glm-5.3-flash`, `deepseek-ai/deepseek-v4.1-flash`, `google/gemma-4-31b-it`, `openai/gpt-oss-20b`, `nvidia/nemotron-3-ultra-550b-a55b` |
+| **Z.ai** (GLM) | [z.ai](https://z.ai) | `https://api.z.ai/api/paas/v4` | modely *Flash* zdarma | `glm-4.7-flash`, `glm-4.5-flash` |
+| **Cohere** (zkušební klíč) | [dashboard.cohere.com](https://dashboard.cohere.com) | `https://api.cohere.ai/compatibility/v1` | asi 1 000 požadavků měsíčně, 20/min | `command-a`, `command-r`, `north-mini-code` |
+
+NVIDIA má ze všech nejštědřejší limity a silné modely na kód, takže se hodí i jako záloha pro AI asistenta (viz níže).
+
+Nabídky se mění každý týden. Aktuální přehled, který se dvakrát týdně automaticky ověřuje, je [awesome-free-ai-coding](https://github.com/mvalentsev/awesome-free-ai-coding). Než ale pošleš data někomu neznámému, podívej se, co s nimi dělá.
+
 **Bezplatné modely na OpenRouteru** najdeš na [openrouter.ai/models](https://openrouter.ai/models) po nastavení filtru ceny na Free. Mají v názvu `:free`, třeba `google/gemma-4-31b-it:free`. Nabídka se často mění. Existuje i `openrouter/free`, který sám vybere nějaký bezplatný model. **Do evalu ho nepoužívej**: pokaždé může odpovídat jiný model, takže výsledky nepůjdou porovnat.
 
 **Na Groqu a Mistralu** najdeš aktuální modely a své limity v konzoli v sekci Limits.
@@ -80,7 +94,7 @@ Všichni níže uvedení poskytovatelé mají **API kompatibilní s OpenAI**. St
 
 **Když dojde limit nebo to nejde:**
 
-- Chyba 429 (*rate limit*): přepni přes `/models` na jiného poskytovatele. Pořadí: Mistral Devstral → Gemini Flash → bezplatný model na OpenRouteru (s filtrem **Tools**, asistent bez volání nástrojů neumí číst soubory).
+- Chyba 429 (*rate limit*): přepni přes `/models` na jiného poskytovatele. Pořadí: Mistral Devstral → NVIDIA (`glm-5.3-flash` nebo `deepseek-v4.1-flash`, pokud máš účet) → Gemini Flash → bezplatný model na OpenRouteru (s filtrem **Tools**, asistent bez volání nástrojů neumí číst soubory).
 - OpenRouter hlásí `No endpoints found matching your data policy`: v [nastavení soukromí na OpenRouteru](https://openrouter.ai/settings/privacy) povol bezplatné modely.
 - Na Groqu asistenta nepouštěj. Limit 8 000 tokenů za minutu se vyčerpá jedním dotazem, protože asistent posílá s každým požadavkem velké množství kontextu. Groq si nech na eval.
 - Model se zacyklí, nečte soubory nebo píše nesmysly: menší modely to dělají. Zkus jiný. **Zapiš si, co se stalo**, do reflexe se to hodí.
@@ -120,7 +134,7 @@ V Pythonu i JS můžeš použít oficiální knihovnu `openai`. Stačí jí nast
 
 | Co | Kde | Zhruba požadavků |
 |---|---|---|
-| AI asistent během dne | Mistral, záloha Gemini a OpenRouter | desítky až stovky |
+| AI asistent během dne | Mistral, záloha NVIDIA, Gemini a OpenRouter | desítky až stovky |
 | ladění evalu na 2 až 3 případech | Groq | 20 |
 | celý eval (Fáze 4) | Groq, Gemini nebo Mistral | 80 |
 
@@ -272,7 +286,7 @@ Model a poskytovatel ať se nastavují parametrem nebo konfigurací, ne přepiso
 
 ### 4a: Porovnání modelů
 
-S promptem `v1` pusť `dev` sadu na **3 různých modelech**, ideálně od aspoň 2 poskytovatelů (například 2 modely na Groqu a 1 na Gemini). Vyber modely různé velikosti, ať je co porovnávat: třeba jeden malý kolem 8 až 20 miliard parametrů a jeden velký nad 70 miliard.
+S promptem `v1` pusť `dev` sadu na **3 různých modelech**, ideálně od aspoň 2 poskytovatelů (například 2 modely na Groqu a 1 na Gemini, nebo cokoli z tabulky dalších poskytovatelů ve Fázi 0). Vyber modely různé velikosti, ať je co porovnávat: třeba jeden malý kolem 8 až 20 miliard parametrů a jeden velký nad 70 miliard.
 
 > Když ti nějaká registrace nepůjde, stačí 3 modely od jednoho poskytovatele. Napiš to do README.
 
@@ -339,6 +353,8 @@ Do README ve své složce dopiš:
   ```
 
   Pozor: OpenRouter dává zdarma jen 50 požadavků denně a jeden větší úkol v Claude Code jich spotřebuje 10 až 30.
+
+  Alternativa: [FreeInference](https://freeinference.org) (výzkumná služba Harvardu) má zdarma endpoint ve formátu Anthropic, takže Claude Code jde napojit přímo. Stačí `ANTHROPIC_BASE_URL` nastavit na `https://freeinference.org/anthropic` a klíč z jejich webu. Limity nezveřejňují a prompty si můžou ukládat pro výzkum.
 
 ---
 
