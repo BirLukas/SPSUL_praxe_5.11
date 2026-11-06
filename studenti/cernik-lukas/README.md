@@ -131,4 +131,95 @@ Vítězná konfigurace (`qwen/qwen3.8-27b` + `v2`) a druhá srovnávací konfigu
 ---
 
 ## Rozbor chyb a reflexe (Fáze 5)
-*(Bude doplněno v rámci Fáze 5)*
+
+### 1. Rozbor 3 konkrétních chyb z měření
+
+#### Chyba 1: Případ #21 (Sada `test`, model `qwen/qwen3.8-27b`, prompt `v2`)
+- **Vstup:**  
+  *„Při pokusu o přihlášení do aplikace uživatel zadá správné údaje, ale namísto přihlášení spadne spojení s databází a v logu se objeví: 'MongoServerError: connection pool closed'. Zkoušeno opakovaně u více účtů.“*
+- **Model vrátil:**  
+  `{"komponenta": "databaze", "zavaznost": "kriticka", "reprodukovatelny": true, "chybova_hlaska": "MongoServerError: connection pool closed"}`
+- **Správná odpověď (gold):**  
+  `{"komponenta": "databaze", "zavaznost": "vysoka", "reprodukovatelny": true, "chybova_hlaska": "MongoServerError: connection pool closed"}`
+- **Důvod neshody:**  
+  Model správně detekoval kořenovou komponentu (`databaze`), reprodukovatelnost i chybovou hlášku, ale spletl se v poli `zavaznost`. Model vyhodnotil uzavřený connection pool v MongoDB jako `kriticka`, protože bez DB spojení je aplikace prakticky nepoužitelná a nikdo se nepřihlásí. V našich pravidlech jsme však pro `vysoka` definovali stav, kdy klíčová funkce (přihlašování) nefunguje více lidem, zatímco `kriticka` byla vymezena pro kompletní pád celého produkčního prostředí. Šlo o jemnou hranici mezi definicemi, kde je úsudek modelu technicky pochopitelný.
+
+#### Chyba 2: Případ #24 (Sada `test`, model `qwen/qwen3.8-27b`, prompt `v2`)
+- **Vstup:**  
+  *„Klimatizace v centrální serverovně hlásí chybový kód 'E-401 Overheat Warning' a teplota v racku stoupla na nebezpečných 38 stupňů. Senzor pípá nepřetržitě, hrozí okamžité nouzové vypnutí serverů.“*
+- **Model vrátil:**  
+  `{"komponenta": "jine", "zavaznost": "kriticka", "reprodukovatelny": null, "chybova_hlaska": "E-401 Overheat Warning"}`
+- **Správná odpověď (gold):**  
+  `{"komponenta": "jine", "zavaznost": "kriticka", "reprodukovatelny": true, "chybova_hlaska": "E-401 Overheat Warning"}`
+- **Důvod neshody:**  
+  Model vrátil `reprodukovatelny: null` místo očekávaného `true`. V hlášení je uvedeno, že *„senzor pípá nepřetržitě“*, což lidský hodnotitel chápe jako trvající, reprodukovatelný incident. LLM však hledalo obvyklou softwarovou formulaci kroků k reprodukci (např. *„dělá to pokaždé při kliknutí“*). Protože šlo o fyzický alarm klimatizace bez explicitního popisu testovacího postupu, model opatrně vrátil `null`. Jde zčásti o nejednoznačnost v zadání u ne-softwarových hlášení.
+
+#### Chyba 3: Případ #7 (Sada `dev`, model `openai/gpt-oss-20b`, prompt `v1`)
+- **Vstup:**  
+  *„No to je fakt nádhera, tmavý režim jste vyřešili geniálně: černé písmo na černém pozadí v celém nastavení profilu. Kdo to má proboha luštit? Žádná chyba nevyskočí, prostě skvělý design. Dělá to pokaždé, když přepnu přepínač na dark mode.“*
+- **Model vrátil:**  
+  `{"komponenta": "frontend", "zavaznost": "nizka", "reprodukovatelny": true, "chybova_hlaska": null}`
+- **Správná odpověď (gold):**  
+  `{"komponenta": "frontend", "zavaznost": "stredni", "reprodukovatelny": true, "chybova_hlaska": null}`
+- **Důvod neshody:**  
+  Menší model GPT-oss-20b neporozuměl ironii a nadsázce v textu (*„No to je fakt nádhera, tmavý režim jste vyřešili geniálně“*). Problém vyhodnotil jako pouhý kosmetický barevný glitch v CSS (`nizka`), ačkoli černé písmo na černém pozadí kompletně znemožňuje čtení a ovládání profilu v tmavém režimu (s nutností přepnout do světlého režimu jako workaround $\rightarrow$ `stredni`). Tuto chybu ve verzi `v2` vyřešily až explicitní few-shot příklady.
+
+---
+
+### 2. Doporučení pro produkci a odhad nákladů
+
+Pokud by měl být tento nástroj nasazen do reálné produkce s provozem **10 000 požadavků denně**, jednoznačně doporučuji kombinaci:
+- **Model:** `qwen/qwen3.8-27b`
+- **Prompt:** `prompts/v2.txt`
+
+**Důvody volby:**
+1. **Přesnost:** Dosahuje 100% úplné shody na dev sadě a 80% na testovací sadě, s 100% validitou JSON výstupu a 100% přesností v extrakci komponenty i chybové hlášky.
+2. **Rychlost (latence):** Průměrná latence činí pouze **0,63 s** na požadavek (oproti 1,38 s u 120B modelu), což zajišťuje okamžitou odezvu při triage v reálném čase.
+3. **Efektivita tokenů:** Model je úsporný a nevytváří zbytečné halucinace ve výstupu (průměrně pouze 57 výstupních tokenů na požadavek).
+
+#### Výpočet nákladů pro 10 000 dotazů denně:
+Na platformě **OpenRouter** je model `qwen/qwen3.8-27b` oceněn sazbami:
+- **Vstup (Prompt):** $0{,}150$ za 1 000 000 tokenů ($0{,}15 / M tokenů)
+- **Výstup (Completion):** $1{,}875$ za 1 000 000 tokenů ($1{,}875 / M tokenů)
+
+Z našich reálných naměřených dat (běh `v2` na test sadě):
+- Průměrný počet vstupních tokenů na 1 dotaz: $1\,378$ tokenů
+- Průměrný počet výstupních tokenů na 1 dotaz: $57$ tokenů
+
+Pro 10 000 dotazů denně spotřebujeme:
+- **Vstupní tokeny celkem:** $10\,000 \times 1\,378 = 13\,780\,000$ tokenů = **13,78 M tokenů**
+- **Výstupní tokeny celkem:** $10\,000 \times 57 = 570\,000$ tokenů = **0,57 M tokenů**
+
+Finanční náklady:
+$$\text{Náklady za vstup} = 13{,}78 \times \$0{,}150 = \$2{,}067$$
+$$\text{Náklady za výstup} = 0{,}57 \times \$1{,}875 = \$1{,}069$$
+$$\mathbf{\text{Celkové denní náklady (10 000 dotazů)}} = \$2{,}067 + \$1{,}069 = \mathbf{\$3{,}14}\ \text{(cca 72 Kč/den)}$$
+$$\mathbf{\text{Celkové měsíční náklady (300 000 dotazů)}} = 30 \times \$3{,}14 = \mathbf{\$94{,}20}\ \text{(cca 2 160 Kč/měsíc)}$$
+
+Provoz takto přesného automatického třídění bug reportů je extrémně ekonomický.
+
+---
+
+### 3. Rozdíl mezi dev a test sadou
+
+- Na sadě **`dev`** dosáhl nejlepší model s promptem `v2` **100,0 %** úplné shody (15 z 15 případů).
+- Na sadě **`test`** dosáhl tentýž model s promptem `v2` **80,0 %** úplné shody (8 z 10 případů).
+
+**Proč se výsledky liší?**
+1. **Efekt adaptace na dev data:** Prompt `v2` byl vytvořen na základě rozboru chyb zjištěných na `dev` sadě. Zpřesněné definice a few-shot příklady byly zacíleny na konkrétní nejasnosti, které se projevily při ladění na `dev`.
+2. **Přirozená generalizace na neviděná data:** Sada `test` obsahovala nové, předem neviděné varianty záludných hlášení (např. případ selhání DB poolu v procesu přihlašování nebo alarm klimatizace v serverovně). Pokles přesnosti o 20 procentních bodů je v souladu s teorií strojového učení – přesně demonstruje, proč se testovací sada musí striktně držet stranou až do finálního měření, abychom nezískali nerealisticky optimistický odhad úspěšnosti.
+
+---
+
+### 4. Zkušenost s AI asistentem
+
+- **K čemu byl asistent využit:**  
+  AI asistent asistoval při formulaci testovacích scénářů (vymýšlení pestrých hlášení z různých IT oblastí), návrhu architektury skriptu `eval.py` s integrovanou mezipamětí a backoff retry pro rate limity, i při ladění textu promptu `v2`.
+- **Pozorované rozdíly mezi modely:**  
+  Menší modely (~20B) měly znatelné potíže s interpretací ironických textů a inklinovaly k chybám v jemnějších sémantických kategoriích (`zavaznost`). Naopak větší či novější modely (Qwen 27B) vykázaly 100% spolehlivost v dodržování JSON formátu a bezchybně extrahovaly doslovné chybové kódy i v situacích se slangem a překlepy.
+
+---
+
+### 5. Závěrečná reflexe
+
+Celé cvičení názorně ukázalo, že vývoj aplikací nad velkými jazykovými modely nelze dělat intuitivním testováním na dvou nebo třech náhodných vstupech, ale vyžaduje exaktní měření číselnými metrikami. Nejvíce mě překvapilo, jak obrovský skok v přesnosti přineslo přidání pouhých tří vhodně zvolených few-shot příkladů – u modelu Qwen na testovací sadě vzrostla úplná shoda z 50 % na 80 %. Fascinující bylo také zjištění, že model střední velikosti (27B) výrazně překonal model s více než 120 miliardami parametrů, a to jak v přesnosti, tak v poloviční latenci. V praktické rovině se ukázala nepostradatelnost lokální diskové mezipaměti (`cache/`), bez níž by ladění evaluačního skriptu neustále naráželo na striktní rate limity bezplatných API. Kdybych projekt dělal znovu, ještě pečlivěji bych formalizoval pravidla pro určení reprodukovatelnosti u fyzických či infrastrukturních incidentů, kde se klasické softwarové pojmy hůře aplikují. Evalační přístup vnímám jako zásadní dovednost pro jakékoliv budoucí profesionální nasazení AI do produkčního prostředí.
