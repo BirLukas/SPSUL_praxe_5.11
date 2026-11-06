@@ -58,6 +58,23 @@ Odpověď modelu je porovnávána s referenční hodnotou (*gold standard*) pole
 
 ---
 
+## Testovací sada (Fáze 2)
+
+Sada obsahuje celkem 25 testovacích případů ve formátu JSONL, rozdělených podle zadání na:
+- `data/dev.jsonl`: 15 případů (ID 1–15) určených pro ladění promptu.
+- `data/test.jsonl`: 10 případů (ID 16–25) určených pro finální evaluační měření (nedotčeno při vývoji).
+
+### Záludné případy (`tezky: true`)
+Sada obsahuje 10 záludných případů (5 v dev, 5 v test) pokrývajících:
+- **Chybějící údaje (`null`)**: Případy bez explicitní chybové hlášky nebo bez zmínky o reprodukovatelnosti (např. ID 6, 13, 22).
+- **Dva systémy v jednom textu / zavádějící kontext**: Uživatel kliká v UI nebo provádí přihlašování, ale skutečným kořenovým problémem je pád databáze nebo transakce (např. ID 9, 21).
+- **Překlepy, hovorový styl a slang**: Rychle sepsané hlášení s chybějící diakritikou a slangem (např. ID 8).
+- **Ironie a sarkasmus**: Stížnost se sarkastickým tónem (např. ID 7, 19).
+- **Nezařaditelná komponenta (`jine`)**: Hlášení problémů mimo standardní softwarové vrstvy, např. tiskárna v kanceláři nebo přehřátí racku v serverovně (např. ID 10, 24).
+- **Chybový kód v textu**: Extrakce stavových kódů a hlášení (např. ID 20).
+
+---
+
 ## Návod ke spuštění (Fáze 0)
 
 Skript je napsán v čistém Pythonu bez nutnosti instalovat externí knihovny (využívá standardní knihovnu).
