@@ -94,7 +94,39 @@ python src/eval.py --provider groq --model openai/gpt-oss-120b --dataset dev --p
 ---
 
 ## Výsledky experimentů (Fáze 4)
-*(Bude doplněno v rámci Fáze 4)*
+
+### 4a: Porovnání modelů na `dev` sadě (prompt `v1`)
+Pro srovnání byly vybrány 3 modely různých velikostí a architektur na infrastruktuře Groq:
+- **`openai/gpt-oss-20b`**: menší open-source model (~20 mld. parametrů).
+- **`openai/gpt-oss-120b`**: velký open-source model (120 mld. parametrů).
+- **`qwen/qwen3.8-27b`**: moderní vícejazyčný model střední velikosti (27 mld. parametrů).
+
+Nejlepších výsledků dosáhl model **Qwen 3.8 27B** s úplnou shodou **73,3 %** a nejnižší latencí (0,49 s).
+
+### 4b: Vylepšení promptu (`prompts/v2.txt`)
+Z rozboru chyb promptu `v1` vyplynulo, že modely nejčastěji chybovaly v rozlišení jemných hranic pole `zavaznost` (např. záměna `vysoka` a `kriticka`) a v určení `reprodukovatelny` při plošných výpadcích.
+V promptu `v2` byly aplikovány následující úpravy:
+1. **Few-shot příklady**: Doplněny 3 kompletně vyřešené syntetické příklady (mimo testovací sadu) demonstrující odlišení závažností a práci s hodnotami `null`.
+2. **Přesnější definice závažnosti**: Výslovně stanoveno, že `kriticka` znamená plošný výpadek či bezpečnostní havárii, zatímco výpadek jedné funkce (např. Google SSO) je `vysoka`.
+3. **Pravidla pro kořenovou příčinu**: Zdůrazněno určení komponenty dle skutečné technické příčiny (např. selhání DB transakce při kliku v UI patří do `databaze`).
+
+Na `dev` sadě dosáhl model **Qwen 27B** s promptem `v2` **100,0% úplné shody** (15/15 případů správně).
+
+### 4c: Finální měření na `test` sadě
+Vítězná konfigurace (`qwen/qwen3.8-27b` + `v2`) a druhá srovnávací konfigurace (`v1`) byly vyhodnoceny na dosud neviděné testovací sadě `data/test.jsonl`:
+- S promptem `v1` dosáhl model na testovací sadě úplné shody **50,0 %**.
+- S vylepšeným promptem `v2` dosáhl model úplné shody **80,0 %** (zlepšení o +30 procentních bodů na neviděných datech).
+
+### Souhrnná tabulka všech běhů
+
+| Model | Poskytovatel | Prompt | Sada | Validní JSON | Úplná shoda | Pole „komponenta“ | Pole „závažnost“ | Pole „reprodukovatelný“ | Pole „chybová hláška“ | Latence | Tokeny (vstup / výstup) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `openai/gpt-oss-20b` | Groq | v1 | dev | 100 % | 60,0 % | 100 % | 66,7 % | 93,3 % | 100 % | 0,81 s | 14 197 / 5 540 |
+| `openai/gpt-oss-120b` | Groq | v1 | dev | 100 % | 60,0 % | 100 % | 66,7 % | 93,3 % | 100 % | 1,38 s | 14 197 / 3 900 |
+| `qwen/qwen3.8-27b` | Groq | v1 | dev | 100 % | 73,3 % | 100 % | 80,0 % | 93,3 % | 100 % | 0,49 s | 13 627 / 838 |
+| **`qwen/qwen3.8-27b`** | **Groq** | **v2** | **dev** | **100 %** | **100,0 %** | **100 %** | **100,0 %** | **100 %** | **100 %** | **0,69 s** | **20 587 / 839** |
+| `qwen/qwen3.8-27b` | Groq | v1 | test | 100 % | 50,0 % | 100 % | 60,0 % | 90,0 % | 100 % | 0,56 s | 9 139 / 566 |
+| **`qwen/qwen3.8-27b`** | **Groq** | **v2** | **test** | **100 %** | **80,0 %** | **100 %** | **90,0 %** | **90,0 %** | **100 %** | **0,63 s** | **13 779 / 567** |
 
 ---
 
